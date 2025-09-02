@@ -424,82 +424,70 @@ class StudentsController extends Controller
         $reference = $request->reference;
         $status = $request->status;
         $message = $request->message;
-        $school_fee_payment = RegistrationFeePayment::where(['school_id' => $school->id, 'receipt_no' => $transaction])->first();
-       if (!$school_fee_payment) {
-            $school_fee_payment = new RegistrationFeePayment();
-            $school_fee_payment->school_id = $school->id;
-            $school_fee_payment->email = $request->email;
-            $school_fee_payment->amount = $request->amount;
-            $school_fee_payment->receipt_no = $transaction;
-            $school_fee_payment->reference = $reference;
-            $school_fee_payment->mode = 'Card';
-            $school_fee_payment->status = $status;
-            $school_fee_payment->message = $message;
-            $school_fee_payment->pay_date = date('Y-m-d', strtotime('now'));
-            $school_fee_payment->save();
+        if ($message == 'Approved' && $status == 'success') {
+            $school_fee_payment = RegistrationFeePayment::where(['school_id' => $school->id, 'receipt_no' => $transaction])->first();
+            if (!$school_fee_payment) {
+                $school_fee_payment = new RegistrationFeePayment();
+                $school_fee_payment->school_id = $school->id;
+                $school_fee_payment->email = $request->email;
+                $school_fee_payment->amount = $request->amount;
+                $school_fee_payment->receipt_no = $transaction;
+                $school_fee_payment->reference = $reference;
+                $school_fee_payment->mode = 'Card';
+                $school_fee_payment->status = $status;
+                $school_fee_payment->message = $message;
+                $school_fee_payment->pay_date = date('Y-m-d', strtotime('now'));
+                $school_fee_payment->save();
+            }
+            // if ($this->isDuplicateStudent($request->first_name, $request->last_name)) {
+            //     return response()->json(['message' => "$request->last_name $request->first_name exists already"], 409);
+            // }
+
+            $request->folder_key = $school->folder_key;
+
+
+            $username = $this->generateUsername($school->id, 'parent');
+            $request->username = $username;
+            $user_obj = new User();
+            list($parent_user_id, $entry_status) = $user_obj->saveUserAsParent($request);
+
+            if ($entry_status == 'new_entry') {
+                $this->updateUniqNumDb($school->id, 'parent');
+            }
+            $request->parent_user_id = $parent_user_id;
+            // check for duplicate students
+
+            $username = $this->generateUsername($school->id, 'student');
+            $request->username = $username;
+            //save user information as student
+            $user_obj = new User();
+            $request->student_user_id = $user_obj->saveUserAsStudent($request, 0); // the second parameter is the confirmation status '0' means yet to be confirmed/approved
+            $this->updateUniqNumDb($school->id, 'student');
+
+            //save students table informaiton
+            $request->registration_no = $username;
+            $request->student_id = $student_obj->saveStudentInfo($request);
+
+
+            $request->class_id = $request->class_teacher_id;
+
+
+
+            //add student to class
+            // Students will be added to class based on current session, because that is when the system recognizes them
+            $student_in_class_obj = new StudentsInClass();
+            $student_in_class_obj->addStudentToClass($request->student_id, $request->class_id, $sess_id, $term_id, $school->id);
+
+            //save guardian informaiton
+            $guardian_obj = new Guardian();
+
+            $guardian_obj->saveGuardianInfo($request);
+
+            // Log Registration payment
+            return $this->payViaCardForRegistration($request, $school_fee_payment);
+            
         }
-        // if ($this->isDuplicateStudent($request->first_name, $request->last_name)) {
-        //     return response()->json(['message' => "$request->last_name $request->first_name exists already"], 409);
-        // }
-
-        $request->folder_key = $school->folder_key;
-
-
-        $username = $this->generateUsername($school->id, 'parent');
-        $request->username = $username;
-        $user_obj = new User();
-        list($parent_user_id, $entry_status) = $user_obj->saveUserAsParent($request);
-
-        if ($entry_status == 'new_entry') {
-            $this->updateUniqNumDb($school->id, 'parent');
-        }
-        $request->parent_user_id = $parent_user_id;
-        // check for duplicate students
-
-        $username = $this->generateUsername($school->id, 'student');
-        $request->username = $username;
-        //save user information as student
-        $user_obj = new User();
-        $request->student_user_id = $user_obj->saveUserAsStudent($request, 0); // the second parameter is the confirmation status '0' means yet to be confirmed/approved
-        $this->updateUniqNumDb($school->id, 'student');
-
-        //save students table informaiton
-        $request->registration_no = $username;
-        $request->student_id = $student_obj->saveStudentInfo($request);
-
-
-        $request->class_id = $request->class_teacher_id;
-
-
-
-        //add student to class
-        // Students will be added to class based on current session, because that is when the system recognizes them
-        $student_in_class_obj = new StudentsInClass();
-        $student_in_class_obj->addStudentToClass($request->student_id, $request->class_id, $sess_id, $term_id, $school->id);
-
-        //save guardian informaiton
-        $guardian_obj = new Guardian();
-
-        $guardian_obj->saveGuardianInfo($request);
-
-        // Log Registration payment
-        $this->payViaCardForRegistration($request, $school_fee_payment);
-
-        // $registrationPin = RegistrationPin::find($request->pin_id);
-        // if ($registrationPin) {
-        //     if ($registrationPin->is_general === 0) {
-        //         $registrationPin->status = 'used';
-        //         $registrationPin->save();
-        //     }
-        // }
-
-        // $action = "Registered " . $request->first_name . " " . $request->last_name . " as new student";
-        // $this->auditTrailEvent($request, $action);
-        //$new_user = User::find($request->student_user_id);
-        //$all_staff = User::where('role', 'staff')->get();
-        //$user->notify(new NewRegistration($user));
-        //Notification::send($all_staff, new NewRegistration($new_user));
-        return 'Successful';
+        return response()->json(['message' => 'An error occured'], 500);
     }
 
     private function payViaCardForRegistration(Request $request, $school_fee_payment)
@@ -514,30 +502,31 @@ class StudentsController extends Controller
         // $school_fee_payment->fee_payment_monitor_id = $request->fee_payment_monitor_id;
         //$school_fee_payment->logged_by = $user->id;
         $school_fee_payment->save();
-        if ($message == 'Approved' && $status == 'success') {
+        
 
-            $student = Student::with('user')->find($school_fee_payment->student_id);
+        $student = Student::with('user')->find($school_fee_payment->student_id);
 
-            $school_fee_payment->amount_paid = $school_fee_payment->amount;
-            $school_fee_payment->purpose = 'Registration Fee';
-            $school_fee_payment->date = $school_fee_payment->pay_date;
-            $school_fee_payment->payer_recipient_id = $student->user_id;
-            $school_fee_payment->payer_recipient_role = 'student';
-            $school_fee_payment->status = 'income';
+        $school_fee_payment->amount_paid = $school_fee_payment->amount;
+        $school_fee_payment->purpose = 'Registration Fee';
+        $school_fee_payment->date = $school_fee_payment->pay_date;
+        $school_fee_payment->payer_recipient_id = $student->user_id;
+        $school_fee_payment->payer_recipient_role = 'student';
+        $school_fee_payment->status = 'income';
 
-            $income_expenses_obj = new IncomeAndExpense();
-            $income_expenses_obj->addIncomeAndExpenses($school_fee_payment);
-            // $this->approveFeePayment($request, $school_fee_payment);
+        $income_expenses_obj = new IncomeAndExpense();
+        $income_expenses_obj->addIncomeAndExpenses($school_fee_payment);
+        // $this->approveFeePayment($request, $school_fee_payment);
 
-            $user  = $student->user;
-            $student_name = $user->first_name . ' ' . $user->last_name;
-            $title = "Registration Fee Payment";
-            $action = "card payment, with reference number $reference, was made for " . $student_name;
-            $this->auditTrailEvent($title, $action);
-
-            Mail::to($user)->send(new ConfirmNewRegistration($user, $user->username));
-        }
-        return response()->json([], 200);
+        $user  = $student->user;
+        $student_name = $user->first_name . ' ' . $user->last_name;
+        $title = "Registration Fee Payment";
+        $action = "card payment, with reference number $reference, was made for " . $student_name;
+        $this->auditTrailEvent($title, $action);
+        $user_code = $user->confirm_hash;
+        // Mail::to($user)->send(new ConfirmNewRegistration($user, $user->username));
+        return response()->json(compact('user_code'), 200);
+        
+        
     }
 
     public function uploadBulkStudents(Request $request)

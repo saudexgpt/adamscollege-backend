@@ -221,4 +221,21 @@ class AuthController extends Controller
         }
         return 'Invalid Confirmation';
     }
+    public function confirmStudentRegistration(Request $request)
+    {
+
+        $hash = $request->code;
+        $user = User::with('student.currentStudentLevel')->where(['confirm_hash' => $hash])->first();
+
+        if ($user) {        //hash is confirmed and valid
+
+            $user->is_confirmed = 1;
+            $user->save();
+            return response()->json(compact('user'), 200);
+            //return view('auth.registration_confirmed', compact('message'));
+
+        }
+        return 'Invalid Confirmation';
+    }
+    
 }

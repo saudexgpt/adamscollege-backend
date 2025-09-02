@@ -74,6 +74,8 @@ Route::group(['prefix' => 'auth'], function () {
     Route::post('login', [AuthController::class, 'login']);
     Route::post('register', [AuthController::class, 'register'])->middleware('permission:create-users');
     Route::get('confirm-registration', [AuthController::class, 'confirmRegistration']);
+    Route::get('confirm-student-registration', [AuthController::class, 'confirmStudentRegistration']);
+    
     Route::group(['middleware' => 'auth:sanctum'], function () {
         Route::post('logout', [AuthController::class, 'logout']);
 
