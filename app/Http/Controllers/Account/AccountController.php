@@ -106,7 +106,7 @@ class AccountController extends Controller
                     'type' => $type,
                     'date' => $income_expense->date,
                     'log' => $income_expense->created_at,
-                    'ref' => $income_expense->user->first_name . ' ' . $income_expense->user->last_name . ' ' . $income_expense->user->username,
+                    'ref' => ($income_expense->user) ? $income_expense->user->first_name . ' ' . $income_expense->user->last_name . ' ' . $income_expense->user->username : '',
                     'amount' => $income_expense->amount,
                     'credit' => ($type === 'income') ? $income_expense->amount : '',
                     'debit' => ($type === 'expenses') ? $income_expense->amount : '',
